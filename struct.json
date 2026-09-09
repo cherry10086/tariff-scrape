@@ -1,0 +1,196 @@
+{
+  "clickable": [
+    {
+      "tag": "SPAN",
+      "cls": "provinceName",
+      "id": "",
+      "text": "北京市"
+    },
+    {
+      "tag": "DIV",
+      "cls": "province-switch",
+      "id": "",
+      "text": "北京市"
+    },
+    {
+      "tag": "DIV",
+      "cls": "province-name",
+      "id": "",
+      "text": "北京市"
+    },
+    {
+      "tag": "DIV",
+      "cls": "template-area-default margin-t24",
+      "id": "公告-20240701026",
+      "text": ""
+    },
+    {
+      "tag": "DIV",
+      "cls": "template-area-default margin-t24",
+      "id": "个人信息区-20240701028",
+      "text": ""
+    },
+    {
+      "tag": "DIV",
+      "cls": "template-area-default",
+      "id": "资费卡片-20240715002",
+      "text": "个人资费\n政企资费\n全网资费\n北京资费\n资费类型：\n套餐\n资费系列：\n全部\n更多"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通用流量\n20GB\n定向流量\n30GB"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n2000分钟\n国内通用流量\n140GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n5000分钟\n国内通用流量\n300GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n800分钟\n国内通用流量\n100GB\n短信\n300条\n宽带\n一条100"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n350分钟\n国内通用流量\n35GB\n短信\n150条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n250分钟\n国内通用流量\n45GB\n短信\n150条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n500分钟\n国内通用流量\n60GB\n短信\n200条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n1000分钟\n国内通用流量\n220GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n3000分钟\n国内通用流量\n500GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n650分钟\n国内通用流量\n50GB\n短信\n200条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n4000分钟\n国内通用流量\n400GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n1500分钟\n国内通用流量\n180GB\n短信\n300条\n宽带\n一条10"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n500分钟\n国内通用流量\n120GB\n短信\n300条\n宽带\n一条100"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n1100分钟\n国内通用流量\n80GB\n短信\n300条\n宽带\n一条100"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n350分钟\n国内通用流量\n70GB\n短信\n200条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n300分钟\n国内通用流量\n40GB\n短信\n150条\n宽带\n一条1000"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n4000分钟\n国内通用流量\n450GB\n宽带\n1000M\n移动高清\n1"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n1000分钟\n国内通用流量\n140GB\n宽带\n1000M\n移动高清\n1"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n600分钟\n国内通用流量\n100GB\n宽带\n1000M\n移动高清\n1台"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n2000分钟\n国内通用流量\n180GB\n宽带\n1000M\n移动高清\n1"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n3000分钟\n国内通用流量\n370GB\n宽带\n1000M\n移动高清\n1"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n5000分钟\n国内通用流量\n550GB\n宽带\n1000M\n移动高清\n1"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n100分钟\n国内通用流量\n20GB\n定向流量\n30GB\n权益\n专属特色"
+    },
+    {
+      "tag": "DIV",
+      "cls": "table-area",
+      "id": "",
+      "text": "国内通话\n150分钟\n国内通用流量\n30GB\n定向流量\n30GB\n权益\n专属特色"
+    }
+  ],
+  "cardClassCounts": {
+    "free-cont-item": 2,
+    "free-cont-box": 2,
+    "tariff-item-container": 5,
+    "item-tips-list": 28,
+    "waterfall-container": 28,
+    "waterfall-item": 56,
+    "tips-item": 56,
+    "tips-attr": 56,
+    "tariff-item-container border-container": 23
+  },
+  "cardSample": "<div data-v-07742a48=\"\" data-v-381c3d81=\"\" class=\"tips-attr\">方案编号:</div>"
+}

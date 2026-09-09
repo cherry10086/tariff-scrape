@@ -1,0 +1,147 @@
+[
+  {
+    "tag": "SPAN",
+    "cls": "provinceName",
+    "text": "北京市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "province-name",
+    "text": "北京市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "安徽省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item active",
+    "text": "北京市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "重庆市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "福建省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "甘肃省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "广东省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "贵州省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "海南省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "河北省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "河南省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "黑龙江省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "湖北省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "湖南省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "吉林省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "江苏省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "江西省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "辽宁省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "青海省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "山东省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "陕西省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "山西省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "上海市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "四川省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "天津市"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "云南省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "select-item",
+    "text": "浙江省"
+  },
+  {
+    "tag": "DIV",
+    "cls": "tips-content",
+    "text": "北京"
+  }
+]
