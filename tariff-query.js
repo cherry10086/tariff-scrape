@@ -11,7 +11,10 @@
  *  - 每个省有两个页签: 全网资费(全国卡) 和 本省资费(如 上海资费/江苏资费)。
  *  - 单价只按「国内通用流量」计算，定向流量不计入。
  *
- * 依赖: puppeteer-core + 本机 Chrome
+ * 依赖: puppeteer-core + 本机 Chrome/Chromium (Debian 12: apt install chromium)
+ *
+ * Debian 12 定时部署: 见 DEBIAN12.md (systemd timer 为主, cron 备选)
+ * 环境变量 TARIFF_PROVINCES="上海市 江苏省" 可作为 -p 的默认值
  *
  * 用法示例:
  *   node tariff-query.js --list-provinces                 列出所有可选省份名
@@ -26,6 +29,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const puppeteer = require('puppeteer-core');
 
 // ---------- 配置 ----------
@@ -41,13 +45,47 @@ function findBrowser() {
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',              // Debian 12: apt install chromium
+    '/usr/bin/microsoft-edge',
+    '/snap/bin/chromium',
   ].filter(Boolean);
   for (const c of candidates) { if (fs.existsSync(c)) return c; }
   throw new Error('未找到 Chrome/Edge，请用环境变量 CHROME_PATH 指定浏览器路径');
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 原子写: 先写 .tmp 再 rename, 定时任务中途被杀时下游不会读到半截文件
+// (tmp 带 PID: 即使两个实例并发写同一输出文件也不互相踩)
+function writeFileAtomic(file, data) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, data, 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+// ---------- 性能优化: 事件驱动等待 ----------
+// 单次 evaluate 加超时: 页面 JS 阻塞(如解密死循环)时不至于让等待原语整体挂死,
+// 超时或 evaluate 失败一律返回 undefined(视为条件未满足), 由上层轮询兜底。
+async function evalWithTimeout(page, fn, arg, ms = 2000) {
+  let timer;
+  const bail = new Promise((r) => { timer = setTimeout(() => r(undefined), ms); timer.unref(); });
+  const v = await Promise.race([page.evaluate(fn, arg).catch(() => undefined), bail]);
+  clearTimeout(timer);
+  return v;
+}
+
+// 轮询浏览器内条件 fn, 成立立即返回 true; 超时返回 false(不抛错, 上层兜底)。
+// 替代固定 sleep 盲等: 页面快就快, 页面慢最多等到 timeout。
+async function waitUntil(page, fn, arg, { timeout = 15000, poll = 300 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await evalWithTimeout(page, fn, arg)) return true;
+    await sleep(poll);
+  }
+  return false;
+}
 
 // ---------- 参数解析 ----------
 function parseArgs(argv) {
@@ -88,17 +126,32 @@ function parseArgs(argv) {
 }
 
 // ---------- 页面操作 ----------
+// 拦截图片/字体/媒体请求: 数据全在加密 XHR 里, 这些资源只耗带宽和内存。
+// 注意 stylesheet 必须放行——innerText 受 display:none 影响, 禁 CSS 会破坏抓取。
+async function setupResourceBlocker(page) {
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const t = req.resourceType();
+    if (t === 'image' || t === 'media' || t === 'font') req.abort().catch(() => {});
+    else req.continue().catch(() => {});
+  });
+}
+
 async function openPage(browser) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1400, height: 900 });
-  await page.goto(PAGE_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-  await sleep(6000); // 等 SPA 首屏渲染
+  await setupResourceBlocker(page);
+  await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // 等加密网关返回、SPA 渲染出省份入口/页签/卡片(替代 networkidle2 + 固定 6 秒盲等)
+  await page.waitForSelector('.prov-entry', { timeout: 30000 }).catch(() => {});
+  await waitUntil(page, () => !!document.querySelector('.range-tab'), null, { timeout: 20000, poll: 400 });
+  await waitUntil(page, () => !!document.querySelector('.item-tips-list'), null, { timeout: 10000, poll: 400 });
   return page;
 }
 
 async function listProvinces(page) {
   await page.evaluate(() => { const e = document.querySelector('.prov-entry'); if (e) e.click(); });
-  await sleep(1500);
+  await page.waitForSelector('.select-item', { timeout: 8000 }).catch(() => {});
   const names = await page.evaluate(() =>
     [...document.querySelectorAll('.select-item')].map((e) => (e.innerText || '').trim()).filter(Boolean)
   );
@@ -109,14 +162,23 @@ async function listProvinces(page) {
 
 async function selectProvince(page, name) {
   await page.evaluate(() => { const e = document.querySelector('.prov-entry'); if (e) e.click(); });
-  await sleep(1500);
+  await page.waitForSelector('.select-item', { timeout: 8000 }).catch(() => {});
   const ok = await page.evaluate((n) => {
     const t = [...document.querySelectorAll('.select-item')].find((e) => (e.innerText || '').trim() === n);
     if (t) { t.click(); return true; }
     return false;
   }, name);
-  await sleep(6500); // 等切省后接口返回 + 渲染
-  return ok;
+  if (!ok) { // 没找到目标省, 关闭弹层
+    await page.evaluate(() => { const e = document.querySelector('.prov-entry'); if (e) e.click(); });
+    return false;
+  }
+  // 等切省生效: 省入口文本变为目标省且页签重新渲染(替代固定 6.5 秒盲等)
+  await waitUntil(page, (n) => {
+    const e = document.querySelector('.prov-entry');
+    return !!e && (e.innerText || '').includes(n) && !!document.querySelector('.range-tab');
+  }, name, { timeout: 20000, poll: 400 });
+  await waitUntil(page, () => !!document.querySelector('.item-tips-list'), null, { timeout: 10000, poll: 400 });
+  return true;
 }
 
 async function getRangeTabs(page) {
@@ -126,19 +188,45 @@ async function getRangeTabs(page) {
 }
 
 async function clickRangeTab(page, label) {
-  return await page.evaluate((lb) => {
+  const clicked = await page.evaluate((lb) => {
     const t = [...document.querySelectorAll('.range-tab')].find((e) => (e.innerText || '').trim() === lb);
     if (t) { t.click(); return true; }
     return false;
   }, label);
+  if (!clicked) return false;
+  // 等该页签卡片渲染且数量稳定(替代固定 3.5 秒盲等)
+  await waitCardsStable(page, { timeout: 12000 });
+  return true;
 }
 
-async function fullScroll(page) {
-  await page.evaluate(async () => {
-    for (let i = 0; i < 15; i++) { window.scrollBy(0, 2500); await new Promise((r) => setTimeout(r, 250)); }
+// 等页面上卡片(.item-tips-list)数量连续 stable 次采样不变, 说明接口返回 + 渲染完成
+async function waitCardsStable(page, { timeout = 12000, poll = 350, stable = 2 } = {}) {
+  let last = -1, same = 0;
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const n = (await evalWithTimeout(page, () => document.querySelectorAll('.item-tips-list').length)) || 0;
+    if (n > 0 && n === last) { if (++same >= stable) return n; } else same = 0;
+    last = n;
+    await sleep(poll);
+  }
+  return last > 0 ? last : 0;
+}
+
+// 触发懒加载: 滚动到底, 但连续两轮卡片数不增长就提前停(替代固定 15 轮全滚)
+async function fullScroll(page, maxRounds = 20) {
+  await page.evaluate(async (maxRounds) => {
+    let last = -1, same = 0;
+    for (let i = 0; i < maxRounds; i++) {
+      window.scrollBy(0, 2500);
+      await new Promise((r) => setTimeout(r, 200));
+      const n = document.querySelectorAll('.item-tips-list').length;
+      if (n === last) { if (++same >= 2) break; } else same = 0;
+      last = n;
+    }
     window.scrollTo(0, 0);
-  });
-  await sleep(1200);
+  }, maxRounds);
+  // 滚动触发的懒加载请求可能仍在途, 等增量卡片插入完成再返回, 避免漏抓最后一批
+  await waitCardsStable(page, { timeout: 4000, poll: 300 });
 }
 
 async function scrapeCards(page, rangeLabel) {
@@ -190,8 +278,7 @@ async function scrapeProvince(page, provName, cfg) {
 
   const all = [];
   for (const tab of wanted) {
-    if (!(await clickRangeTab(page, tab))) continue;
-    await sleep(3500);
+    if (!(await clickRangeTab(page, tab))) continue; // 内部已等渲染稳定
     await fullScroll(page);
     all.push(...(await scrapeCards(page, tab)));
   }
@@ -349,11 +436,36 @@ function buildReport(perProvince, cfg) {
 }
 
 // ---------- 主流程 ----------
+// Chrome 启动参数面向无显示器的 Debian 服务器调优:
+//  - disable-dev-shm-usage: 服务器 /dev/shm 常只有 64M, 不加极易崩页/崩溃
+//  - user-data-dir 带 PID 指到系统临时目录: 并发实例不共用 profile(会锁冲突),
+//    用完即删(见 runOnce), 不在 tmp 留垃圾
+const PROFILE_DIR = path.join(os.tmpdir(), `tariff-chrome-${process.pid}`);
+
+function buildLaunchArgs() {
+  return [
+    '--no-sandbox', // 以非特权专用用户运行时, 可删除此行启用 Chromium 自带沙箱
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-extensions',
+    '--disable-component-update',
+    '--disable-background-networking',
+    '--disable-sync',
+    '--mute-audio',
+    '--no-first-run',
+    '--disable-blink-features=AutomationControlled',
+    '--window-size=1400,900',
+    `--user-data-dir=${PROFILE_DIR}`,
+  ];
+}
+
 async function runOnce(cfg) {
   const browser = await puppeteer.launch({
     executablePath: findBrowser(),
-    headless: cfg.headful ? false : 'new',
-    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--window-size=1400,900'],
+    headless: !cfg.headful,
+    args: buildLaunchArgs(),
   });
   try {
     const page = await openPage(browser);
@@ -374,16 +486,18 @@ async function runOnce(cfg) {
     console.log(report);
 
     if (cfg.out) {
-      fs.writeFileSync(cfg.out, report + '\n', 'utf8');
+      writeFileAtomic(cfg.out, report + '\n');
       console.log(`\n[已写入] ${path.resolve(cfg.out)}`);
     }
     if (cfg.json) {
       const jsonPath = (cfg.out ? cfg.out.replace(/\.\w+$/, '') : 'tariff') + '.json';
-      fs.writeFileSync(jsonPath, JSON.stringify(perProvince.map(({ province, selected, all }) => ({ province, selected, plans: all })), null, 2), 'utf8');
+      writeFileAtomic(jsonPath, JSON.stringify(perProvince.map(({ province, selected, all }) => ({ province, selected, plans: all })), null, 2) + '\n');
       console.log(`[已写入] ${path.resolve(jsonPath)}`);
     }
   } finally {
     await browser.close();
+    // maxRetries: Windows 上 Crashpad 子进程可能短暂占用文件; Linux 下无影响
+    fs.rmSync(PROFILE_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
   }
 }
 
@@ -407,30 +521,72 @@ const HELP = `中国移动资费公示 · 每GB单价查询脚本
   --headful             显示浏览器窗口(默认无头)
   -h, --help            帮助
 
+环境变量:
+  TARIFF_PROVINCES      空格分隔的省份列表, 作为 -p 的默认值(供 systemd/cron 部署用)
+                       例: TARIFF_PROVINCES="上海市 江苏省" node tariff-query.js
+
 示例:
   node tariff-query.js -p 上海市 -p 江苏省 --top 10 --out report.txt --json
   node tariff-query.js -p 上海市 --watch --interval 12`;
 
+// 单次抓取看门狗: 页面异常挂死时及时失败, 不占住 systemd/cron 的槽位
+const RUN_TIMEOUT_MS = 10 * 60 * 1000;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`看门狗超时(${label}): ${Math.round(ms / 60000)} 分钟`)), ms);
+    timer.unref(); // 不阻止进程正常退出
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// 失败自动重试(共 attempts 次), 全部失败则以非零码退出, 让 systemd/cron 感知
+async function runWithRetry(cfg, attempts = 2) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await withTimeout(runOnce(cfg), RUN_TIMEOUT_MS, '单次抓取');
+      return;
+    } catch (e) {
+      const canRetry = i < attempts;
+      console.error(`[${new Date().toLocaleString('zh-CN', { hour12: false })}] 第 ${i}/${attempts} 次执行失败: ${e.message}${canRetry ? '，5 秒后重试' : ''}`);
+      if (canRetry) await sleep(5000);
+      else process.exitCode = 1;
+    }
+  }
+}
+
 (async () => {
   const cfg = parseArgs(process.argv);
   if (cfg.help) { console.log(HELP); return; }
+  // 环境变量兜底: systemd/cron 部署时用 TARIFF_PROVINCES="上海市 江苏省" 代替命令行 -p
   if (!cfg.listProvinces && !cfg.provinces.length) {
-    console.log('缺少 --province。先跑 `node tariff-query.js --list-provinces` 查省份名。\n');
+    const envProv = (process.env.TARIFF_PROVINCES || '').trim();
+    if (envProv) cfg.provinces = envProv.split(/\s+/);
+  }
+  if (!cfg.listProvinces && !cfg.provinces.length) {
+    console.log('缺少 --province。先跑 `node tariff-query.js --list-provinces` 查省份名，或设置环境变量 TARIFF_PROVINCES。\n');
     console.log(HELP);
+    process.exitCode = 2;
     return;
   }
+
+  // systemd 停止服务时会发 SIGTERM, 及时退出避免拖延到被 SIGKILL
+  process.on('SIGTERM', () => {
+    console.error('[SIGTERM] 收到终止信号, 退出。');
+    process.exit(143);
+  });
 
   if (cfg.watch && !cfg.listProvinces) {
     const ms = cfg.interval * 3600 * 1000;
     console.log(`[watch] 每 ${cfg.interval} 小时执行一次，Ctrl+C 停止。`);
     const tick = async () => {
-      try { await runOnce(cfg); }
-      catch (e) { console.error(`[${new Date().toLocaleString('zh-CN', { hour12: false })}] 执行出错:`, e.message); }
+      await runWithRetry(cfg);
       console.log(`\n[watch] 下次执行: ${new Date(Date.now() + ms).toLocaleString('zh-CN', { hour12: false })}\n`);
     };
     await tick();
     setInterval(tick, ms);
   } else {
-    await runOnce(cfg);
+    await runWithRetry(cfg);
   }
 })();

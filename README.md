@@ -76,3 +76,7 @@ node tariff-query.js -p 上海市 -p 江苏省 --out report.txt --watch
 1. **内置定时**：使用 `--watch` 参数可让 Node.js 进程常驻后台，利用 `setInterval` 循环执行。
 2. **系统级定时（推荐）**：如果是为了在服务器或本地电脑上长期稳定运行（比如开机自启、不怕进程意外崩溃），建议**放弃使用 `--watch**`。
 3. **任务计划程序**：更靠谱的做法是使用 Windows 系统自带的“任务计划程序”（Task Scheduler）或 Linux 的 `crontab`，定时调用完整的命令（例如 `node C:\ai\softwares\tariff-scrape\tariff-query.js -p 上海市 -p 江苏省 --out report.txt`），这样不仅节约系统资源，且容错率极高。
+
+## 🐧 Debian 12 服务器部署
+
+在 Debian 12 上长期定时运行请参见 [DEBIAN12.md](DEBIAN12.md)：提供 systemd timer（推荐）与 cron 两种方案、一键安装脚本 `install-debian12.sh`，并已针对无显示器服务器做性能优化（事件驱动等待替代盲等、资源请求拦截、`--disable-dev-shm-usage` 等）。省份也可通过环境变量 `TARIFF_PROVINCES="上海市 江苏省"` 配置。

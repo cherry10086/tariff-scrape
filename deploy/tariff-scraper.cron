@@ -1,0 +1,7 @@
+# /etc/cron.d/tariff-scraper — systemd timer 的备选方案(二选一, 不要同时启用)
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# 每天 07:00/19:00 抓取; flock 防止上一次未跑完时重叠启动
+# 需先: mkdir -p /var/log && touch 权限由 logrotate create 处理
+0 7,19 * * * tariff cd /opt/tariff-scrape && TARIFF_PROVINCES="上海市 江苏省" flock -n /run/lock/tariff-scraper.lock /usr/bin/node tariff-query.js --out /var/lib/tariff-scraper/report.txt --json >> /var/log/tariff-scraper.log 2>&1

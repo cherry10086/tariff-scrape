@@ -1,0 +1,15 @@
+# /etc/systemd/system/tariff-scraper.timer
+# 每天 07:00 / 19:00 各抓一次(资费数据一天两查足够)
+[Unit]
+Description=定时运行 tariff-scraper 资费抓取
+
+[Timer]
+OnCalendar=*-*-* 07,19:00:00
+# 随机延迟 0~10 分钟, 避免和其他整点任务拥塞
+RandomizedDelaySec=600
+# 关机期间错过的班次, 开机后补跑
+Persistent=true
+Unit=tariff-scraper.service
+
+[Install]
+WantedBy=timers.target
