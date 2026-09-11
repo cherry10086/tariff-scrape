@@ -12,7 +12,9 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "==> 安装系统依赖 (chromium / 中文字体 / node)..."
 apt-get update
 apt-get install -y --no-install-recommends chromium fonts-noto-cjk
-command -v node >/dev/null 2>&1 || apt-get install -y --no-install-recommends nodejs
+# Debian 12 中 npm 是独立包, 必须和 nodejs 一起装, 否则后面 npm ci 会失败
+command -v node >/dev/null 2>&1 || apt-get install -y --no-install-recommends nodejs npm
+command -v npm >/dev/null 2>&1 || apt-get install -y --no-install-recommends npm
 
 echo "==> 部署代码到 ${APP_DIR}..."
 install -d "${APP_DIR}"
