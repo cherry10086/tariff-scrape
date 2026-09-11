@@ -1,8 +1,8 @@
 {
   "name": "tariff-scrape",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "中国移动资费公示抓取与每GB单价对比 (Debian 12 定时版)",
+  "main": "tariff-query.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

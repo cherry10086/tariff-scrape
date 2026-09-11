@@ -23,8 +23,7 @@
  *   node tariff-query.js -p 江苏省 --local-only            只看本省页签
  *   node tariff-query.js -p 上海市 --nationwide-only       只看全网页签
  *   node tariff-query.js -p 上海市 --top 10 --out sh.txt   取前10 并写入文件
- *   node tariff-query.js -p 上海市 -p 江苏省 --watch       每12小时循环执行
- *   node tariff-query.js -p 上海市 --watch --interval 6    改为每6小时
+ * 定时执行交给系统调度(systemd timer / cron), 见 DEBIAN12.md
  */
 
 const fs = require('fs');
@@ -35,24 +34,18 @@ const puppeteer = require('puppeteer-core');
 // ---------- 配置 ----------
 const PAGE_URL = 'https://h.app.coc.10086.cn/cmcc-app/pc-pages/tariffZonePers.html';
 
-// 自动探测本机 Chrome / Edge 路径
+// 自动探测 Chromium/Chrome (Debian 12), 或用环境变量 CHROME_PATH 指定
 function findBrowser() {
   const candidates = [
     process.env.CHROME_PATH,
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/chromium',              // Debian 12: apt install chromium
+    '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',              // Debian 12: apt install chromium
-    '/usr/bin/microsoft-edge',
     '/snap/bin/chromium',
   ].filter(Boolean);
   for (const c of candidates) { if (fs.existsSync(c)) return c; }
-  throw new Error('未找到 Chrome/Edge，请用环境变量 CHROME_PATH 指定浏览器路径');
+  throw new Error('未找到 Chromium/Chrome，请用环境变量 CHROME_PATH 指定浏览器路径');
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -96,11 +89,8 @@ function parseArgs(argv) {
     top: 8,
     out: null,
     json: false,
-    watch: false,
-    interval: 12,           // 小时
     listProvinces: false,
     headful: false,
-    compare: false,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -112,9 +102,6 @@ function parseArgs(argv) {
       case '--top': cfg.top = parseInt(next(), 10) || 8; break;
       case '--out': cfg.out = next(); break;
       case '--json': cfg.json = true; break;
-      case '--watch': cfg.watch = true; break;
-      case '--interval': cfg.interval = parseFloat(next()) || 12; break;
-      case '--compare': cfg.compare = true; break;
       case '--list-provinces': cfg.listProvinces = true; break;
       case '--headful': cfg.headful = true; break;
       case '-h': case '--help': cfg.help = true; break;
@@ -514,9 +501,6 @@ const HELP = `中国移动资费公示 · 每GB单价查询脚本
   --top <n>             每类列出前 n 条 (默认 8)
   --out <file>          文本报告写入文件
   --json                同时导出结构化 JSON
-  --watch               常驻循环，每隔 interval 小时跑一次
-  --interval <小时>     配合 --watch，默认 12
-  --compare             多省对比表(查询≥2省时默认已附带)
   --list-provinces      列出所有可选省份名后退出
   --headful             显示浏览器窗口(默认无头)
   -h, --help            帮助
@@ -527,7 +511,7 @@ const HELP = `中国移动资费公示 · 每GB单价查询脚本
 
 示例:
   node tariff-query.js -p 上海市 -p 江苏省 --top 10 --out report.txt --json
-  node tariff-query.js -p 上海市 --watch --interval 12`;
+  TARIFF_PROVINCES="上海市 江苏省" node tariff-query.js --out report.txt`;
 
 // 单次抓取看门狗: 页面异常挂死时及时失败, 不占住 systemd/cron 的槽位
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -577,16 +561,5 @@ async function runWithRetry(cfg, attempts = 2) {
     process.exit(143);
   });
 
-  if (cfg.watch && !cfg.listProvinces) {
-    const ms = cfg.interval * 3600 * 1000;
-    console.log(`[watch] 每 ${cfg.interval} 小时执行一次，Ctrl+C 停止。`);
-    const tick = async () => {
-      await runWithRetry(cfg);
-      console.log(`\n[watch] 下次执行: ${new Date(Date.now() + ms).toLocaleString('zh-CN', { hour12: false })}\n`);
-    };
-    await tick();
-    setInterval(tick, ms);
-  } else {
-    await runWithRetry(cfg);
-  }
+  await runWithRetry(cfg);
 })();
