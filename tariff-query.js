@@ -24,6 +24,10 @@
  *   node tariff-query.js -p 上海市 --nationwide-only       只看全网页签
  *   node tariff-query.js -p 上海市 --top 10 --out sh.txt   取前10 并写入文件
  * 定时执行交给系统调度(systemd timer / cron), 见 DEBIAN12.md
+ *
+ * 防封提示: 单次运行 = 页面默认视图(含全网资费) + 至多几次切省。
+ * 请勿一次传大量省份; 需要多省时拆成多次运行(不同时刻的 timer 实例),
+ * 脚本也会在省与省之间自动随机停顿(--delay, 默认 30 秒)。
  */
 
 const fs = require('fs');
@@ -91,6 +95,7 @@ function parseArgs(argv) {
     json: false,
     listProvinces: false,
     headful: false,
+    delay: 30,              // 多省切换之间的基础停顿秒数(实际随机浮动), 0 关闭
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -102,6 +107,7 @@ function parseArgs(argv) {
       case '--top': cfg.top = parseInt(next(), 10) || 8; break;
       case '--out': cfg.out = next(); break;
       case '--json': cfg.json = true; break;
+      case '--delay': cfg.delay = parseFloat(next()) || 0; break;
       case '--list-provinces': cfg.listProvinces = true; break;
       case '--headful': cfg.headful = true; break;
       case '-h': case '--help': cfg.help = true; break;
@@ -264,7 +270,8 @@ async function scrapeProvince(page, provName, cfg) {
   if (!wanted.length) wanted = tabs;
 
   const all = [];
-  for (const tab of wanted) {
+  for (const [idx, tab] of wanted.entries()) {
+    if (idx > 0) await sleep(1000 + Math.random() * 2000); // 页签间模拟人工节奏
     if (!(await clickRangeTab(page, tab))) continue; // 内部已等渲染稳定
     await fullScroll(page);
     all.push(...(await scrapeCards(page, tab)));
@@ -464,9 +471,17 @@ async function runOnce(cfg) {
     }
 
     const perProvince = [];
-    for (const prov of cfg.provinces) {
-      const { selected, cards } = await scrapeProvince(page, prov, cfg);
-      perProvince.push({ province: prov, selected, all: enrich(cards), raw: cards });
+    if (cfg.provinces.length > 3) {
+      console.error('[提醒] 单次运行查询省份数较多, 易触发站点风控。建议拆成多次运行(见 DEBIAN12.md)。');
+    }
+    for (let i = 0; i < cfg.provinces.length; i++) {
+      if (i > 0 && cfg.delay > 0) {
+        const sec = Math.round(cfg.delay * (1 + Math.random() * 0.5)); // 随机浮动, 避免固定节奏
+        console.log(`[礼貌间隔] 停顿 ${sec} 秒后切换下一个省...`);
+        await sleep(sec * 1000);
+      }
+      const { selected, cards } = await scrapeProvince(page, cfg.provinces[i], cfg);
+      perProvince.push({ province: cfg.provinces[i], selected, all: enrich(cards), raw: cards });
     }
 
     const report = buildReport(perProvince, cfg);
@@ -501,6 +516,7 @@ const HELP = `中国移动资费公示 · 每GB单价查询脚本
   --top <n>             每类列出前 n 条 (默认 8)
   --out <file>          文本报告写入文件
   --json                同时导出结构化 JSON
+  --delay <秒>          多省切换之间的基础停顿秒数(随机浮动, 默认 30; 0 关闭)
   --list-provinces      列出所有可选省份名后退出
   --headful             显示浏览器窗口(默认无头)
   -h, --help            帮助

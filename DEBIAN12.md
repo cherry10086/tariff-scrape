@@ -89,6 +89,26 @@ cron 版本自带 `flock -n` 防止上次未跑完时重叠启动；日志走 `/
 
 单省抓取耗时估计从 ~25s 降到 ~8-12s（取决于接口响应速度；最坏情况不劣于原版，因为每处事件等待的超时上限都 ≥ 原盲等时长）。
 
+## 降低封 IP 风险
+
+资费公示站点对高频/大批量访问有风控，部署时遵守：
+
+1. **一次运行只查一个省**。页面默认视图自带「全网资费」页签，单省一次运行 = 全国 + 该省，是请求量的下限。默认 `/etc/tariff-scraper.conf` 即 `TARIFF_PROVINCES="江苏省"`。
+2. **不要把多个省塞进同一次运行**（那会把每个省的接口都拉一遍）。需要第二个省时，复制一个 service/timer 实例并错开时刻：
+
+   ```bash
+   # 第二个省的实例: 配置和输出分开, 运行时刻与主实例错开半小时
+   cp /etc/tariff-scraper.conf /etc/tariff-scraper-2.conf   # 改成 TARIFF_PROVINCES="上海市"
+   cp /etc/systemd/system/tariff-scraper.service /etc/systemd/system/tariff-scraper-2.service
+   cp /etc/systemd/system/tariff-scraper.timer   /etc/systemd/system/tariff-scraper-2.timer
+   # 编辑 -2.service: EnvironmentFile 改为 -/etc/tariff-scraper-2.conf, --out 改为 report-shanghai.txt
+   # 编辑 -2.timer: OnCalendar 改为 *-*-* 07,19:30:00 (与主实例错开)
+   systemctl daemon-reload && systemctl enable --now tariff-scraper-2.timer
+   ```
+
+3. **低频**。默认每天 07:00/19:00 两次已足够（资费不会一天变几次），`RandomizedDelaySec=600` 已在 timer 里打散整点。
+4. 同一次运行确实要传多个省时，脚本会在省间随机停顿（`--delay`，默认 30 秒，0 关闭）；超过 3 个省时脚本会打印拆分建议。
+
 ## 已知注意事项
 
 - `--no-sandbox` 目前保留（兼容 root 手动调试）。生产上以专用用户 `tariff` 运行时，可从 `tariff-query.js` 的 `buildLaunchArgs()` 里删掉该行以启用 Chromium 自带沙箱。
