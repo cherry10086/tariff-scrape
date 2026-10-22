@@ -132,6 +132,26 @@ async function setupResourceBlocker(page) {
 
 async function openPage(browser) {
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => {
+    window.__TARIFF_PENDING__ = 0;
+    window.__TARIFF_FAILED__ = 0;
+    const open = XMLHttpRequest.prototype.open;
+    const send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+      this.__isTariffList = typeof url === 'string' && /getTariffListInfo/.test(url);
+      return open.call(this, method, url, ...args);
+    };
+    XMLHttpRequest.prototype.send = function (...args) {
+      if (this.__isTariffList) {
+        window.__TARIFF_PENDING__++;
+        this.addEventListener('loadend', () => {
+          window.__TARIFF_PENDING__--;
+          if (this.status === 0 || this.status >= 400) window.__TARIFF_FAILED__++;
+        }, { once: true });
+      }
+      return send.apply(this, args);
+    };
+  });
   await page.setViewport({ width: 1400, height: 900 });
   await setupResourceBlocker(page);
   await page.goto(PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -166,10 +186,11 @@ async function selectProvince(page, name) {
     return false;
   }
   // 等切省生效: 省入口文本变为目标省且页签重新渲染(替代固定 6.5 秒盲等)
-  await waitUntil(page, (n) => {
+  const switched = await waitUntil(page, (n) => {
     const e = document.querySelector('.prov-entry');
     return !!e && (e.innerText || '').includes(n) && !!document.querySelector('.range-tab');
   }, name, { timeout: 20000, poll: 400 });
+  if (!switched) throw new Error(`省份切换未完成：${name}`);
   await waitUntil(page, () => !!document.querySelector('.item-tips-list'), null, { timeout: 10000, poll: 400 });
   return true;
 }
@@ -197,8 +218,12 @@ async function waitCardsStable(page, { timeout = 12000, poll = 350, stable = 2 }
   let last = -1, same = 0;
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const n = (await evalWithTimeout(page, () => document.querySelectorAll('.item-tips-list').length)) || 0;
-    if (n > 0 && n === last) { if (++same >= stable) return n; } else same = 0;
+    const probe = await evalWithTimeout(page, () => ({
+      cards: document.querySelectorAll('.item-tips-list').length,
+      pending: window.__TARIFF_PENDING__ || 0,
+    }));
+    const n = probe ? probe.cards : 0;
+    if (probe && probe.pending === 0 && n > 0 && n === last) { if (++same >= stable) return n; } else same = 0;
     last = n;
     await sleep(poll);
   }
@@ -206,20 +231,23 @@ async function waitCardsStable(page, { timeout = 12000, poll = 350, stable = 2 }
 }
 
 // 触发懒加载: 滚动到底, 但连续两轮卡片数不增长就提前停(替代固定 15 轮全滚)
-async function fullScroll(page, maxRounds = 20) {
-  await page.evaluate(async (maxRounds) => {
-    let last = -1, same = 0;
-    for (let i = 0; i < maxRounds; i++) {
-      window.scrollBy(0, 2500);
-      await new Promise((r) => setTimeout(r, 200));
-      const n = document.querySelectorAll('.item-tips-list').length;
-      if (n === last) { if (++same >= 2) break; } else same = 0;
-      last = n;
-    }
-    window.scrollTo(0, 0);
-  }, maxRounds);
-  // 滚动触发的懒加载请求可能仍在途, 等增量卡片插入完成再返回, 避免漏抓最后一批
-  await waitCardsStable(page, { timeout: 4000, poll: 300 });
+async function fullScroll(page, maxRounds = 400) {
+  let last = -1, same = 0;
+  for (let i = 0; i < maxRounds; i++) {
+    const probe = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      return { cards: document.querySelectorAll('.item-tips-list').length, pending: window.__TARIFF_PENDING__ || 0 };
+    });
+    if (probe.pending === 0 && probe.cards === last) {
+      if (++same >= 8) {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        return;
+      }
+    } else same = 0;
+    last = probe.cards;
+    await sleep(400);
+  }
+  throw new Error('达到滚动上限仍有加载或数据未稳定，无法确认抓取完整');
 }
 
 async function scrapeCards(page, rangeLabel) {
@@ -262,18 +290,22 @@ async function scrapeCards(page, rangeLabel) {
 async function scrapeProvince(page, provName, cfg) {
   const ok = await selectProvince(page, provName);
   if (!ok) return { selected: false, cards: [] };
+  if (cfg.nationwideOnly && cfg.localOnly) throw new Error('全网与本省范围选项不能同时使用');
 
   const tabs = await getRangeTabs(page); // 例如 ['全网资费','江苏资费']
   let wanted = tabs;
   if (cfg.nationwideOnly) wanted = tabs.filter((t) => t.includes('全网'));
   if (cfg.localOnly) wanted = tabs.filter((t) => !t.includes('全网'));
-  if (!wanted.length) wanted = tabs;
+  if (!wanted.length) throw new Error('没有找到请求范围对应的资费页签');
 
   const all = [];
   for (const [idx, tab] of wanted.entries()) {
     if (idx > 0) await sleep(1000 + Math.random() * 2000); // 页签间模拟人工节奏
-    if (!(await clickRangeTab(page, tab))) continue; // 内部已等渲染稳定
+    const failedBefore = await page.evaluate(() => window.__TARIFF_FAILED__ || 0);
+    if (!(await clickRangeTab(page, tab))) throw new Error(`未能选中资费页签：${tab}`);
     await fullScroll(page);
+    const failedAfter = await page.evaluate(() => window.__TARIFF_FAILED__ || 0);
+    if (failedAfter > failedBefore) throw new Error(`资费页签请求失败：${tab}`);
     all.push(...(await scrapeCards(page, tab)));
   }
   const seen = new Set(); const uniq = [];
@@ -455,13 +487,16 @@ function buildLaunchArgs() {
   ];
 }
 
-async function runOnce(cfg) {
+async function runOnce(cfg, signal) {
   const browser = await puppeteer.launch({
     executablePath: findBrowser(),
     headless: !cfg.headful,
     args: buildLaunchArgs(),
   });
+  const abort = () => { browser.close().catch(() => {}); };
+  signal?.addEventListener('abort', abort, { once: true });
   try {
+    if (signal?.aborted) throw new Error('抓取已取消');
     const page = await openPage(browser);
 
     if (cfg.listProvinces) {
@@ -475,15 +510,18 @@ async function runOnce(cfg) {
       console.error('[提醒] 单次运行查询省份数较多, 易触发站点风控。建议拆成多次运行(见 DEBIAN12.md)。');
     }
     for (let i = 0; i < cfg.provinces.length; i++) {
+      if (signal?.aborted) throw new Error('抓取已取消');
       if (i > 0 && cfg.delay > 0) {
         const sec = Math.round(cfg.delay * (1 + Math.random() * 0.5)); // 随机浮动, 避免固定节奏
         console.log(`[礼貌间隔] 停顿 ${sec} 秒后切换下一个省...`);
         await sleep(sec * 1000);
       }
       const { selected, cards } = await scrapeProvince(page, cfg.provinces[i], cfg);
+      if (!selected) throw new Error(`未能选中省份：${cfg.provinces[i]}`);
       perProvince.push({ province: cfg.provinces[i], selected, all: enrich(cards), raw: cards });
     }
 
+    if (signal?.aborted) throw new Error('抓取已取消，保留已有报告');
     const report = buildReport(perProvince, cfg);
     console.log(report);
 
@@ -497,6 +535,7 @@ async function runOnce(cfg) {
       console.log(`[已写入] ${path.resolve(jsonPath)}`);
     }
   } finally {
+    signal?.removeEventListener('abort', abort);
     await browser.close();
     // maxRetries: Windows 上 Crashpad 子进程可能短暂占用文件; Linux 下无影响
     fs.rmSync(PROFILE_DIR, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
@@ -532,10 +571,13 @@ const HELP = `中国移动资费公示 · 每GB单价查询脚本
 // 单次抓取看门狗: 页面异常挂死时及时失败, 不占住 systemd/cron 的槽位
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
 
-function withTimeout(promise, ms, label) {
+function withTimeout(promise, ms, label, onTimeout) {
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`看门狗超时(${label}): ${Math.round(ms / 60000)} 分钟`)), ms);
+    timer = setTimeout(() => {
+      try { if (onTimeout) onTimeout(); }
+      finally { reject(new Error(`看门狗超时(${label}): ${Math.round(ms / 60000)} 分钟`)); }
+    }, ms);
     timer.unref(); // 不阻止进程正常退出
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
@@ -544,10 +586,15 @@ function withTimeout(promise, ms, label) {
 // 失败自动重试(共 attempts 次), 全部失败则以非零码退出, 让 systemd/cron 感知
 async function runWithRetry(cfg, attempts = 2) {
   for (let i = 1; i <= attempts; i++) {
+    const controller = new AbortController();
+    const run = runOnce(cfg, controller.signal);
     try {
-      await withTimeout(runOnce(cfg), RUN_TIMEOUT_MS, '单次抓取');
+      await withTimeout(run, RUN_TIMEOUT_MS, '单次抓取', () => controller.abort());
       return;
     } catch (e) {
+      controller.abort();
+      // 等旧任务退出后才重试，避免两个浏览器共用 profile 或旧任务覆盖新报告。
+      await run.catch(() => {});
       const canRetry = i < attempts;
       console.error(`[${new Date().toLocaleString('zh-CN', { hour12: false })}] 第 ${i}/${attempts} 次执行失败: ${e.message}${canRetry ? '，5 秒后重试' : ''}`);
       if (canRetry) await sleep(5000);
