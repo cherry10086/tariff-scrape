@@ -63,3 +63,37 @@ test('watchdog aborts the active attempt before exposing a failure', async () =>
   await assert.rejects(api.withTimeout(new Promise(() => {}), 1, 'test', () => { cancelled = true; }), /超时/);
   assert.equal(cancelled, true);
 });
+
+function unitSections() {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'deploy', 'tariff-scraper.service'), 'utf8');
+  const sections = {}; let section;
+  for (const raw of source.split(/\r?\n/)) {
+    const line = raw.trim();
+    const header = /^\[([^\]]+)\]$/.exec(line);
+    if (header) { section = sections[header[1]] = {}; continue; }
+    const field = /^([^#=]+)=(.*)$/.exec(line);
+    if (field && section) section[field[1]] = field[2];
+  }
+  return sections;
+}
+
+test('service working directory matches the installer application directory', () => {
+  const installer = fs.readFileSync(path.join(__dirname, '..', 'install-debian12.sh'), 'utf8');
+  const appDir = /^APP_DIR=(.+)$/m.exec(installer)[1];
+  const unit = unitSections();
+  assert.equal(unit.Service.WorkingDirectory, appDir);
+  assert.ok(unit.Service.ExecStart.includes(appDir + '/tariff-query.js'));
+});
+
+test('restart rate limits belong to the Unit section', () => {
+  const unit = unitSections();
+  assert.equal(unit.Unit.StartLimitIntervalSec, '3600');
+  assert.equal(unit.Unit.StartLimitBurst, '3');
+  assert.equal(unit.Service.StartLimitIntervalSec, undefined);
+});
+
+test('oneshot execution is bounded by TimeoutStartSec', () => {
+  const unit = unitSections();
+  assert.equal(unit.Service.Type, 'oneshot');
+  assert.equal(unit.Service.TimeoutStartSec, '1500');
+});

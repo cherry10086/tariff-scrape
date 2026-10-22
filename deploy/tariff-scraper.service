@@ -4,25 +4,24 @@
 Description=中国移动资费公示抓取 (tariff-scrape)
 After=network-online.target
 Wants=network-online.target
+# 限制重启频率: 1 小时内最多 3 次, 超限进入 failed 不再重试。
+StartLimitIntervalSec=3600
+StartLimitBurst=3
 
 [Service]
 Type=oneshot
 # 专用低权用户(由 install-debian12.sh 创建)
 User=tariff
 Group=tariff
-WorkingDirectory=/opt/tariff-scraper
+WorkingDirectory=/opt/tariff-scrape
 # 省份列表在 /etc/tariff-scraper.conf 里配置(TARIFF_PROVINCES)
 EnvironmentFile=-/etc/tariff-scraper.conf
 ExecStart=/usr/bin/node /opt/tariff-scrape/tariff-query.js --out /var/lib/tariff-scraper/report.txt --json
 # 失败时 5 分钟后自动补跑(脚本内部还有 1 次即时重试)
 Restart=on-failure
 RestartSec=300
-# 限制重启频率: 1 小时内最多 3 次, 超限进入 failed 不再重试。
-# 防止"看门狗/内存超限杀掉 + on-failure 重启"级联成无限循环
-StartLimitIntervalSec=3600
-StartLimitBurst=3
 # 含重试整体不应超过 25 分钟, 超时强杀, 防止挂死占住槽位
-RuntimeMaxSec=1500
+TimeoutStartSec=1500
 # 资源约束: 后台抓取任务不与同机其他服务抢资源
 Nice=15
 CPUWeight=30
